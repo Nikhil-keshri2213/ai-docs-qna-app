@@ -1,19 +1,17 @@
-import logging
+import os
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-from langchain_community.llms import HuggingFaceEndpoint
+# ✅ REPLACE THIS
+from langchain_community.llms import HuggingFacePipeline
+from transformers import pipeline
 
-log = logging.getLogger("docmind")
-
-# Serverless HF model (no local download)
-LLM_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
 
 PROMPT_TEMPLATE = """You are a helpful assistant.
 
 Answer ONLY from the provided context.
-If the answer is not in the context, say:
+If not found, say:
 "I don't know based on the document."
 
 Context:
@@ -21,7 +19,8 @@ Context:
 
 Question: {question}
 
-Answer:"""
+Answer:
+"""
 
 
 def _format_docs(docs):
@@ -29,18 +28,16 @@ def _format_docs(docs):
 
 
 def create_qa_chain(vector_store):
-    """
-    RAG pipeline using Hugging Face Inference API (no local model download)
-    """
-    log.info(f"Using Hugging Face hosted model: {LLM_MODEL}")
 
-    # 🔥 Remote model (no download)
-    llm = HuggingFaceEndpoint(
-        repo_id=LLM_MODEL,
-        temperature=0.1,
-        max_new_tokens=256,
-        huggingfacehub_api_token=None,  # auto-picks from env
+    # ✅ LOCAL MODEL (NO API, NO TOKEN)
+    pipe = pipeline(
+        "text2text-generation",
+        model="google/flan-t5-base",
+        max_length=256,
+        temperature=0.1
     )
+
+    llm = HuggingFacePipeline(pipeline=pipe)
 
     prompt = PromptTemplate(
         template=PROMPT_TEMPLATE,
@@ -58,7 +55,5 @@ def create_qa_chain(vector_store):
         | llm
         | StrOutputParser()
     )
-
-    log.info("QA chain ready (remote inference)")
 
     return chain

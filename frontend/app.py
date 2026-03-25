@@ -5,6 +5,11 @@ import time
 import streamlit as st
 from dotenv import load_dotenv
 
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.DEBUG,
@@ -504,8 +509,12 @@ with st.sidebar:
                 log.error(f"Failed to process document: {e}", exc_info=True)
                 st.error(f"Error: {e}")
             finally:
-                os.unlink(tmp_path)
-                log.debug(f"Temp file removed: {tmp_path}")
+                try:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                        log.debug(f"Temp file removed: {tmp_path}")
+                except Exception as e:
+                    log.warning(f"Temp cleanup failed: {e}")
 
     if st.session_state.doc_name:
         st.markdown(f"""
@@ -607,7 +616,17 @@ with (main_col if st.session_state.show_logs else main_col):
         st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
         # ── Chat input ────────────────────────────────────────────────────────
-        question = st.chat_input(f"Ask about  {st.session_state.doc_name[:35]}…")
+                # ── Chat input ────────────────────────────────────────────────────────
+        doc_name = st.session_state.get("doc_name")
+
+        if doc_name:
+            placeholder_text = f"Ask about {doc_name[:35]}…"
+            disabled = False
+        else:
+            placeholder_text = "Upload a document to start asking..."
+            disabled = True
+
+        question = st.chat_input(placeholder_text, disabled=disabled)
 
         if question:
             log.info(f"User question: {question!r}")
@@ -623,16 +642,28 @@ with (main_col if st.session_state.show_logs else main_col):
 
                 try:
                     t0 = time.time()
-                    log.debug("Invoking QA chain…")
-                    answer = st.session_state.qa_chain.invoke(question)
-                    if isinstance(answer, dict):
-                        answer = answer.get("result", str(answer))
-                    answer = answer.strip()
-                    log.info(f"Chain answered in {time.time()-t0:.2f}s — {len(answer)} chars")
 
-                    log.debug("Fetching source docs…")
-                    sources = st.session_state.retriever.invoke(question)
-                    log.debug(f"Retrieved {len(sources)} source chunks")
+                    # ✅ safe chain check
+                    if not st.session_state.qa_chain:
+                        raise Exception("QA chain not initialized")
+
+                    # ✅ correct invoke
+                    raw_answer = st.session_state.qa_chain.invoke(question)
+
+                    # ✅ normalize response
+                    if isinstance(raw_answer, dict):
+                        answer = raw_answer.get("result") or str(raw_answer)
+                    else:
+                        answer = str(raw_answer)
+
+                    answer = answer.strip()
+
+                    log.info(f"Chain answered in {time.time()-t0:.2f}s")
+
+                    # ✅ safe retriever
+                    sources = []
+                    if st.session_state.retriever:
+                        sources = st.session_state.retriever.invoke(question)
 
                 except Exception as e:
                     log.error(f"Chain error: {e}", exc_info=True)
@@ -641,11 +672,13 @@ with (main_col if st.session_state.show_logs else main_col):
                     sources = []
 
             placeholder.empty()
+
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": answer,
                 "sources": sources,
             })
+
             st.rerun()
 
 # ── Log panel (right column) ──────────────────────────────────────────────────
