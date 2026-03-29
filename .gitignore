@@ -1,2 +1,15 @@
-.venv
+# Environment Variables
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Logs
+*.log
+
+# OS Files
+.DS_Store
